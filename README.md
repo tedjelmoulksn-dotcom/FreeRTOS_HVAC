@@ -44,9 +44,11 @@ The repository does not currently provide a self-contained firmware build. The i
 
 ## Verification priorities
 
+A useful control trace associates each ADC reading with its timestamp, calculated duty and actual output. This separates conversion errors from scheduling delays and actuator behaviour, and makes threshold transitions directly inspectable.
+
 Check ADC full-scale conversion, each threshold boundary, PWM duty and frequency, heater behaviour, stack usage and task timing on hardware. Use finite timeouts, consistent measurement snapshots and `vTaskDelayUntil` if a fixed-period design is required. ITM output can affect execution time and should be measured.
 
-No hardware or timing tests were rerun during this documentation update.
+Measure acquisition, task execution and output transitions together to evaluate the control schedule.
 
 ## Licence
 
