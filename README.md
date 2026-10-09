@@ -1,59 +1,113 @@
-# FreeRTOS HVAC Control — STM32 Embedded Prototype
+# Régulation HVAC sous FreeRTOS sur STM32
 
-STM32 HVAC prototype using FreeRTOS tasks, ADC acquisition and PWM/GPIO control.
+Contrôleur de chauffage et de ventilation à deux tâches FreeRTOS sur STM32 : une tâche lit la température et le CO₂ (potentiomètres sur l'ADC), l'autre commande les volets d'air en PWM et les planchers chauffants en GPIO.
 
-![STM32 · two tasks · analogue inputs · PWM / GPIO.](assets/project-overview.svg)
+## Vue d'ensemble
 
-*STM32 · two tasks · analogue inputs · PWM / GPIO.*
+- **Cadre** : TP « OS temps réel », deuxième année du cycle ingénieur Instrumentation, Sup Galilée (Université Sorbonne Paris Nord).
+- **Équipe** : binôme avec Sarah Dahmoun.
+- **Périmètre** : le sujet prévoyait une communication Wi-Fi/MQTT ; elle a été abandonnée et le système simplifié avec des capteurs et actionneurs simulés.
+- **État** : terminé, non maintenu.
 
-## Architecture
+## Objectifs
 
-| Function | Implementation |
-|---|---|
-| Acquisition | STM32 HAL ADC channel selection, conversion polling and 12-bit normalisation |
-| Air-quality control | CO₂ input scaled to a 0–2000 ppm range; stepped damper duty |
-| Temperature control | Input scaled to 0–40 °C; stepped airflow demand |
-| Actuation | Two timer compare channels for PWM and GPIO-controlled heater states |
-| Scheduling | Two tasks at `tskIDLE_PRIORITY + 1`, with a 1000 ms relative delay |
-| Diagnostics | `printf` routed through ITM character output |
+Découper une application de régulation en tâches FreeRTOS périodiques et piloter des périphériques STM32 (ADC, timer PWM, GPIO) avec la HAL.
 
-Source: [`src/main.c`](src/main.c). Report: [`docs/`](docs/).
+## Architecture du système
 
-## Control rules
-
-The CO₂ controller requests 0%, 25%, 50%, 75% or 100% opening across thresholds of 600, 700, 1000 and 1500 ppm. The temperature controller requests 0% below 21 °C, 50% from 21 to below 23 °C, 30% from 23 to below 25 °C, 10% from 25 to below 30 °C and 5% at or above 30 °C. Its separate branches below 19 °C and from 19 to below 21 °C both request 0%.
-
-PWM is calculated from the timer auto-reload value: `CCR = ARR * duty / 100`. The combined demand is capped at 100%. Below 14 °C, both heater outputs are asserted; above that threshold, the first is cleared and the second toggles in the supplied implementation.
-
-These are exercise rules, not a tuned closed-loop PID controller.
-
-## RTOS and hardware details
-
-Task stacks are declared as 128 FreeRTOS stack units, whose byte size depends on the port. The delay is relative to task execution, so it does not establish an exact one-second sampling period.
-
-ADC polling uses `HAL_MAX_DELAY`; conversion faults can therefore block a task indefinitely. Task creation results are not checked. Shared measurements and diagnostic output should be reviewed for synchronisation before extending the prototype.
-
-The source contains peripheral pin comments, but no complete board project. Validate timer alternate functions, ADC mapping, clock configuration and heater drive circuitry against the actual hardware.
-
-## Building and reproducing
-
-```bash
-git clone https://github.com/tedjelmoulksn-dotcom/FreeRTOS_HVAC.git
-cd FreeRTOS_HVAC
+```mermaid
+flowchart LR
+    P1[Potentiomètre<br/>CO2, PA1] --> ADC[ADC1]
+    P2[Potentiomètre<br/>température, PA2] --> ADC
+    ADC --> TS[Task_Sensors<br/>période 1 s]
+    TS -- variables globales<br/>temperature, co2_ppm --> TC[Task_Control<br/>période 1 s]
+    TC --> D[Control_Damper<br/>TIM1 CH1 / CH2 : volets FAD, EXAD]
+    TC --> H[Control_Heater<br/>GPIO PB1, PA5 : planchers FH1, FH2]
+    TS -. printf .-> ITM[Trace ITM]
+    TC -. printf .-> ITM
 ```
 
-Integrate the application into a compatible STM32 project containing HAL drivers, startup code, linker script, FreeRTOS port and `FreeRTOSConfig.h`. Configure ADC, timers, GPIO and the RTOS time base before enabling the tasks.
+## Matériel
 
-The repository does not currently provide a self-contained firmware build. The inputs are simulated through analogue scaling; no digital CO₂ sensor, wireless stack or remote monitoring service is implemented.
+| Élément | Détail |
+|---|---|
+| Carte | STM32 à cœur Cortex-M4 (`core_cm4.h`). Le paramètre `ADC_SAMPLETIME_3CYCLES` correspond à la HAL des STM32F4 : référence exacte **à confirmer** |
+| Capteurs simulés | Potentiomètres : CO₂ sur PA1 (canal 1), température sur PA2 (canal 2) |
+| Actionneurs simulés | Volets : PWM de TIM1, canal 1 (PA7) et canal 2 (PA4) ; planchers : LED sur PB1 et PA5 |
 
-## Verification priorities
+## Logiciel
 
-A useful control trace associates each ADC reading with its timestamp, calculated duty and actual output. This separates conversion errors from scheduling delays and actuator behaviour, and makes threshold transitions directly inspectable.
+C, STM32CubeIDE, HAL STM32, FreeRTOS (API native `xTaskCreate`, `vTaskDelay`), trace `printf` redirigée vers l'ITM.
 
-Check ADC full-scale conversion, each threshold boundary, PWM duty and frequency, heater behaviour, stack usage and task timing on hardware. Use finite timeouts, consistent measurement snapshots and `vTaskDelayUntil` if a fixed-period design is required. ITM output can affect execution time and should be measured.
+## Implémentation
 
-Measure acquisition, task execution and output transitions together to evaluate the control schedule.
+Le code est dans [`src/main.c`](src/main.c). **Il a été retranscrit à la main depuis les captures d'écran du compte rendu** : les fichiers d'origine n'ont pas été conservés.
+
+| Fonction | Rôle |
+|---|---|
+| `_write()` | Redirige `printf` vers l'ITM (`ITM_SendChar`) |
+| `Read_ADC_Channel()` | Reconfigure le canal de l'ADC, lance une conversion par scrutation et renvoie une valeur normalisée entre 0 et 1 |
+| `Set_PWM()` | Convertit un rapport cyclique en pourcentage en valeur de comparaison du timer |
+| `Read_CO2()` / `Read_Temperature()` | Mise à l'échelle : 0 à 2000 ppm et 0 à 40 °C |
+| `Control_Damper()` | Ouverture des volets = commande CO₂ + commande température, plafonnée à 100 % |
+| `Control_Heater()` | Planchers chauffants selon le seuil de 14 °C |
+| `Task_Sensors()` / `Task_Control()` | Deux tâches de même priorité, période de 1 s, pile de 128 mots |
+
+Commande des volets codée :
+
+| CO₂ | Part CO₂ | Température | Part température |
+|---|---|---|---|
+| < 600 ppm | 0 % | < 21 °C | 0 % |
+| ≤ 700 ppm | 25 % | < 23 °C | 50 % |
+| ≤ 1000 ppm | 50 % | < 25 °C | 30 % |
+| ≤ 1500 ppm | 75 % | < 30 °C | 10 % |
+| > 1500 ppm | 100 % | ≥ 30 °C | 5 % |
+
+## Principes d'ingénierie
+
+- Ordonnancement préemptif FreeRTOS, tâches périodiques avec `vTaskDelay(pdMS_TO_TICKS(1000))`.
+- Conversion analogique-numérique 12 bits (`/ 4095`).
+- Modulation de largeur d'impulsion par le registre de comparaison du timer.
+- Trace non intrusive par l'ITM du Cortex-M4.
+
+## Résultats
+
+Le compte rendu présente le fonctionnement par la trace ITM et les LED. Aucune mesure chiffrée n'est conservée : **à documenter** (capture de la console ITM ou photo du montage).
+
+## Difficultés et limites
+
+- **Code non compilable seul** : `main.h`, la configuration d'horloge, les initialisations CubeMX (GPIO, ADC1, TIM1) et le noyau FreeRTOS manquent.
+- **Cahier des charges partiellement codé** : le sujet prévoyait des paliers de chauffage à 14, 17 et 19 °C et un réchauffeur d'air ; seul le seuil de 14 °C est codé. Au-dessus, FH1 s'éteint et FH2 **change d'état à chaque cycle** (`HAL_GPIO_TogglePin`), donc clignote à 0,5 Hz.
+- **Variables partagées sans protection** : les mesures passent d'une tâche à l'autre par des variables globales, sans mutex ni file de messages.
+- `fmin` (double) est appliqué à des entiers 8 bits ; une comparaison entière suffirait.
+- Capteurs simulés : aucune mesure réelle de température ou de CO₂.
+
+## Structure du dépôt
+
+```
+src/main.c   Programme principal (retranscrit depuis le compte rendu)
+docs/        Compte rendu du TP (à relire avant publication)
+assets/      Captures d'origine du code
+```
+
+## Exécution
+
+Créer un projet STM32CubeIDE pour la carte utilisée, activer FreeRTOS (CMSIS ou API native), ADC1 (canaux 1 et 2), TIM1 en PWM (canaux 1 et 2), les GPIO PB1 et PA5 et la trace SWV/ITM, puis remplacer le `main.c` généré par celui-ci. Non vérifié lors de la rédaction de ce README.
+
+## Médias
+
+Captures d'origine du code, issues du compte rendu :
+
+![Inclusions, variables et prototypes](assets/code_1.png)
+![Lecture des capteurs et commande des volets](assets/code_3.png)
+
+## Compétences démontrées
+
+- FreeRTOS : création de tâches, priorités, temporisation non bloquante.
+- HAL STM32 : ADC, timer PWM, GPIO.
+- Débogage par trace ITM.
+- Lecture critique du code par rapport au cahier des charges.
 
 ## Licence
 
-No project-wide licence has been defined.
+Aucune licence n'a été définie.

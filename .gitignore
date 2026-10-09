@@ -1,0 +1,17 @@
+
+
+# Environnements et fichiers temporaires
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.swp
+*.swo
+*~
+.DS_Store
+node_modules/
+
+# Sorties de compilation
+*.o
+*.obj
+*.elf
