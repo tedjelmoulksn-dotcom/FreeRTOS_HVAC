@@ -1,6 +1,10 @@
 # FreeRTOS HVAC Control — STM32 Embedded Prototype
 
-A C prototype that separates air-quality and temperature control into two FreeRTOS tasks. ADC inputs emulate environmental measurements; PWM and GPIO outputs represent ventilation and heating actuators.
+STM32 HVAC prototype using FreeRTOS tasks, ADC acquisition and PWM/GPIO control.
+
+![STM32 · two tasks · analogue inputs · PWM / GPIO.](assets/project-overview.svg)
+
+*STM32 · two tasks · analogue inputs · PWM / GPIO.*
 
 ## Architecture
 
@@ -17,7 +21,7 @@ Source: [`src/main.c`](src/main.c). Report: [`docs/`](docs/).
 
 ## Control rules
 
-The CO₂ controller requests 0%, 25%, 50%, 75% or 100% opening across thresholds of 600, 700, 1000 and 1500 ppm. The temperature controller requests 0%, 20%, 50%, 30%, 10% or 5% across thresholds of 19, 21, 23, 25 and 30 °C.
+The CO₂ controller requests 0%, 25%, 50%, 75% or 100% opening across thresholds of 600, 700, 1000 and 1500 ppm. The temperature controller requests 0% below 21 °C, 50% from 21 to below 23 °C, 30% from 23 to below 25 °C, 10% from 25 to below 30 °C and 5% at or above 30 °C. Its separate branches below 19 °C and from 19 to below 21 °C both request 0%.
 
 PWM is calculated from the timer auto-reload value: `CCR = ARR * duty / 100`. The combined demand is capped at 100%. Below 14 °C, both heater outputs are asserted; above that threshold, the first is cleared and the second toggles in the supplied implementation.
 
