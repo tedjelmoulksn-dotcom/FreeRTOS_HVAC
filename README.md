@@ -2,6 +2,10 @@
 
 STM32 exercise separating sensor acquisition and HVAC control into two periodic FreeRTOS tasks. ADC potentiometers simulate temperature and CO₂ inputs; PWM outputs and GPIOs represent dampers and heaters.
 
+![FreeRTOS HVAC project overview](assets/project-overview.svg)
+
+*Architecture overview; potentiometers simulate the temperature and CO₂ inputs.*
+
 ## Repository guide
 
 | Location | Contents |
